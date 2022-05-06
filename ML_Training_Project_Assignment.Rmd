@@ -1,0 +1,145 @@
+---
+title: "Peer-graded assignment: by Ghazal Montaseri"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Problem statement
+
+The goal of this project is to predict the manner in which people did the exercise. The output variable is "classe". We want to fit a predictor to the train data and then use the prediction model to predict 20 different test cases.
+To build a predictor model, we use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways (5 classes).
+
+## Loading libraries
+
+```{r clean environment and libraries, message=FALSE, error=FALSE}
+rm(list = ls())
+library(ggplot2)
+library(caret)
+library(dplyr)
+library(rattle)
+library(rpart)
+library(rpart.plot)
+library(corrplot)
+library(randomForest)
+library(RColorBrewer)
+```
+
+# Importing train data and exploratory analysis
+
+We import the training dataset and do exploratory analysis to discover the training data. The trainingset consists of 19622 row collected from 6 users and for each user 160 records were considered.  
+
+```{r exploratory, warning=FALSE, error=FALSE}
+setwd("~/")
+set.seed(123)
+training.raw = read.csv(file = '~/pml-training.csv', na.strings=c("<NA>","NA"))
+test.raw     = read.csv(file = '~/pml-testing.csv', na.strings=c("<NA>","NA"))
+
+dim(training.raw)
+dim(test.raw)
+```
+
+# Remove the columns which are not features
+
+In the next step, we clean the training and test dataset in a way that columns without any information. By that, 5 columns were excluded from datasets.  
+```{r removing, warning=FALSE, error=FALSE}
+training = training.raw[,-c(1:5)]
+testing  =  test.raw[,-c(1:5)]
+
+dim(training)
+dim(testing)
+```
+# Remove the columns with near zero variance
+
+Then, we clean the data such that features with near zero variance were removed. By that, 60 features were removed and now the dataset contains 95 features. Note, all data processing methods should apply to both test and training data.
+```{r removing2, warning=FALSE, error=FALSE}
+
+nzv = nearZeroVar(training, saveMetrics= TRUE)
+
+training = training[, !nzv$nzv]
+testing  = testing[, !nzv$nzv]
+
+dim(training)
+dim(testing)
+
+```
+# Remove the columns which which contain `NA`. 
+
+Opening the training dataset file showed that there are features who have missing (NA) or non-reported samples (shown as empty). We remove columns with more than 50% NA samples and by that number of features reduces to 60. If number of missing data for each column was smaller, we could test preProcess(data,method = "knnImpute", k = X) to impute the missing values based on K nearest neighobrs. 
+
+```{r removing3, warning=FALSE, error=FALSE} 
+
+training = training[,colMeans(is.na(training)) < 0.5]
+testing  = testing[,colMeans(is.na(testing)) < 0.5]
+
+dim(training)
+dim(testing)
+```
+
+# Plot Correlation Matrix of features in the traing datset 
+```{r plot, warning=FALSE, error=FALSE} 
+
+corrplot(cor(training[, -length(names(training))]), method = "color", tl.cex = 0.5)
+
+``` 
+
+
+# Generate validation dataset from training dataset 
+To test the performance of our model prediction before going to the main test dataset, we can evaluate the model based on the validation data. To do so, we do partitioning and get 70% training and 30 % validation dataset. 
+```{r split, warning=FALSE, error=FALSE}
+set.seed(123) 
+inTrain =  createDataPartition(training$classe, p = 0.70, list = FALSE)
+validation =  training[-inTrain, ]
+training   = training[inTrain, ]
+
+``` 
+# Creat a ML model and check its accuracy on the training dataset
+We start with the decision tree model and calculate the confusion matrix. Accuracy of the model on the training data is 0.8295. 
+
+```{r model, warning=FALSE, error=FALSE}
+modFit = rpart(classe ~ ., data = training, method = "class")
+prp(modFit)
+
+
+pred = predict(modFit, newdata=training, , type = "class")
+table(pred, training$classe)
+
+
+confusionMatrix(as.factor(training$classe), as.factor(pred))
+
+```  
+
+# Check decision tree model's accuracy on the validation dataset 
+Compared to the training dataset, Accuracy is abit reduced (= 0.8274 ) in the validation dataset.      
+```{r validation, warning=FALSE, error=FALSE}
+
+predVal = predict(modFit, newdata=validation, , type = "class")
+table(predVal, validation$classe)
+
+
+confusionMatrix(as.factor(validation$classe), as.factor(predVal))
+```  
+
+# Check if we can improve accuracy of the ML model
+As the second ML technique, we select random forest and check its performance on the validation dataset to compare it with the decision tree model we have already generated. Using the random forest algorithm improves the accuracy from 0.83 to 0.99.Note, if we do not select number of trees, the execution takes long time, so, I set ntree=100 and by that still the accuracy is good.
+  
+```{r dandom forest, warning=FALSE, error=FALSE}
+modFit2 = train(classe ~ ., data = training, method = "rf", ntree=100)
+
+predVal2 = predict(modFit2, validation)
+
+confusionMatrix(as.factor(validation$classe), as.factor(predVal2))
+
+``` 
+
+# Predic the manner of subjects in the test dataset
+For the final model prediction on the test dataset, we select the random forest model. Predictions are: 
+```{r prediction on test data, warning=FALSE, error=FALSE}
+
+predict(modFit2, newdata=testing[, -length(names(testing))])
+```  
+
+
